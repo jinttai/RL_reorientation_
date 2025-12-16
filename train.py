@@ -3,7 +3,7 @@ import gymnasium as gym
 import numpy as np
 from stable_baselines3 import TD3
 from stable_baselines3.common.callbacks import BaseCallback, CallbackList
-from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from stable_baselines3.common.noise import NormalActionNoise
 from stable_baselines3.common.monitor import Monitor
 
@@ -15,6 +15,19 @@ from src.env.space_robot_env import SpaceRobotEnv
 from src.models.custom_policy import SimpleMLPFeatureExtractor
 
 model_path = os.path.join(os.path.dirname(__file__), 'assets', 'spacerobot_cjt.xml')
+
+def linear_schedule(initial_value: float, final_value: float):
+    """
+    Linear schedule for SB3.
+    progress_remaining goes from 1 (start) to 0 (end).
+    """
+    initial_value = float(initial_value)
+    final_value = float(final_value)
+
+    def func(progress_remaining: float) -> float:
+        return final_value + (initial_value - final_value) * progress_remaining
+
+    return func
 
 class LoggingCallback(BaseCallback):
     def __init__(self, csv_path: Optional[str] = None, verbose: int = 0):
@@ -105,9 +118,22 @@ class LoggingCallback(BaseCallback):
         self.final_joint_errors = []
 
 def main():
-    env = SpaceRobotEnv(model_path=model_path)
-    env = gym.wrappers.TimeLimit(env, max_episode_steps=Config().MAX_EPISODE_STEPS)
-    env = Monitor(env)
+    cfg = Config()
+
+    def make_env():
+        e = SpaceRobotEnv(model_path=model_path)
+        e = gym.wrappers.TimeLimit(e, max_episode_steps=cfg.MAX_EPISODE_STEPS)
+        e = Monitor(e)
+        return e
+
+    env = DummyVecEnv([make_env])
+    if cfg.NORM_OBS or cfg.NORM_REWARD:
+        env = VecNormalize(
+            env,
+            norm_obs=cfg.NORM_OBS,
+            norm_reward=cfg.NORM_REWARD,
+            clip_obs=cfg.CLIP_OBS,
+        )
 
     # Policy kwargs should not include the callback.
     # If you wanted a custom feature extractor, it must inherit from BaseFeaturesExtractor.
@@ -122,12 +148,12 @@ def main():
         "MlpPolicy",  # Standard MLP policy for Box observation space
         env,
         policy_kwargs=policy_kwargs,
-        learning_rate=1e-3,
+        learning_rate=linear_schedule(cfg.LR_INITIAL, cfg.LR_FINAL),
         gamma=0.99,
         batch_size=512,
         train_freq=(1, "episode"),
         gradient_steps=-1,
-        action_noise=NormalActionNoise(mean=np.zeros(Config().ACTION_DIM), sigma=0.1 * np.ones(Config().ACTION_DIM)),
+        action_noise=NormalActionNoise(mean=np.zeros(cfg.ACTION_DIM), sigma=0.1 * np.ones(cfg.ACTION_DIM)),
         policy_delay=2,  # TD3 specific: delay policy updates
         target_policy_noise=0.2,  # TD3 specific: noise added to target policy
         target_noise_clip=0.5,  # TD3 specific: clip target policy noise
@@ -135,9 +161,12 @@ def main():
     )
 
     callbacks = CallbackList([LoggingCallback()])
-    model.learn(total_timesteps=500000, callback=callbacks, progress_bar=True, log_interval=10)
+    model.learn(total_timesteps=cfg.TOTAL_TIMESTEPS, callback=callbacks, progress_bar=True, log_interval=10)
 
     model.save("spacerobot_cjt_td3")
+    # Save VecNormalize running stats so you can load & evaluate consistently later.
+    if isinstance(env, VecNormalize):
+        env.save("spacerobot_cjt_td3_vecnormalize.pkl")
     env.close()
 
 

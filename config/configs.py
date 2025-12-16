@@ -8,6 +8,17 @@ class Config:
         self.MAX_EPISODE_STEPS = 100
         self.MAX_EPISODE_LENGTH = 100
 
+        # Training
+        self.TOTAL_TIMESTEPS = 500_000
+        # Linear learning-rate schedule: lr(progress) = LR_FINAL + (LR_INITIAL - LR_FINAL) * progress_remaining
+        self.LR_INITIAL = 1e-3
+        self.LR_FINAL = 1e-5
+
+        # Observation normalization (SB3 VecNormalize)
+        self.NORM_OBS = True
+        self.NORM_REWARD = False
+        self.CLIP_OBS = 10.0
+
         self.KP = 0.1
         self.KD = 10.0
         self.MAX_TORQUE = 0.1

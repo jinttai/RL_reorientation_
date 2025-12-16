@@ -112,7 +112,7 @@ class SpaceRobotEnv(MujocoEnv, utils.EzPickle):
             self._target_base_euler = self._sample_base_euler()
             obs = self._get_obs()
             current_base_euler = obs[0:3]
-            target_base_euler = obs[18:21]
+            target_base_euler = obs[19:22]
             initial_euler_diff = np.linalg.norm(current_base_euler - target_base_euler)
             retry_count += 1
         
